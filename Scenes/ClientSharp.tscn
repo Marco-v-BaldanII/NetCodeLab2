@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://bc1pcy4tc1v1v"]
 
-[ext_resource type="PackedScene" uid="uid://sk46l5q0pamx" path="res://Scenes/Client.tscn" id="1_3dkgy"]
+[ext_resource type="PackedScene" uid="uid://sk46l5q0pamx" path="res://Scenes/NetworkManager.tscn" id="1_3dkgy"]
 [ext_resource type="Script" path="res://Scripts/ClientSharp.cs" id="2_yyubc"]
 
 [node name="ClientSharp" instance=ExtResource("1_3dkgy")]

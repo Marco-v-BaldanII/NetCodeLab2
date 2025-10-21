@@ -26,13 +26,13 @@ theme_override_constants/separation = 40
 custom_minimum_size = Vector2(400, 100)
 layout_mode = 2
 theme_override_font_sizes/font_size = 35
-text = "Server"
+text = "Host"
 
 [node name="ClientButton" type="Button" parent="CenterContainer/VBoxContainer"]
 custom_minimum_size = Vector2(400, 100)
 layout_mode = 2
 theme_override_font_sizes/font_size = 35
-text = "Client"
+text = "Join"
 
 [connection signal="button_down" from="CenterContainer/VBoxContainer/ServerButton" to="." method="_on_server_button_button_down"]
 [connection signal="button_down" from="CenterContainer/VBoxContainer/ClientButton" to="." method="_on_client_button_button_down"]

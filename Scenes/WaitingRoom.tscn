@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3 uid="uid://k8iu06auqn5r"]
+
+[ext_resource type="PackedScene" uid="uid://qr4yyu1lq6wj" path="res://Scenes/chat.tscn" id="1_8brdy"]
+
+[node name="WaitingRoom" type="Node2D"]
+
+[node name="Chat" parent="." instance=ExtResource("1_8brdy")]
+
+[node name="TextEdit" parent="Chat/VBoxContainer" index="0"]
+text = ""
+
+[editable path="Chat"]

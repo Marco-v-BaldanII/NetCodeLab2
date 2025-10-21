@@ -1,6 +1,41 @@
-[gd_scene load_steps=2 format=3 uid="uid://j1yf621wkk2k"]
+[gd_scene load_steps=3 format=3 uid="uid://j1yf621wkk2k"]
 
 [ext_resource type="Script" path="res://Scripts/server.gd" id="1_fqdl5"]
+[ext_resource type="Script" path="res://Scripts/chat.gd" id="2_m1y21"]
 
 [node name="Server" type="Node2D"]
 script = ExtResource("1_fqdl5")
+
+[node name="Chat" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 42.0
+offset_top = 176.0
+offset_right = 464.0
+offset_bottom = 653.0
+script = ExtResource("2_m1y21")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Chat"]
+layout_mode = 0
+offset_right = 354.0
+offset_bottom = 468.0
+
+[node name="TextEdit" type="TextEdit" parent="Chat/VBoxContainer"]
+custom_minimum_size = Vector2(0, 400)
+layout_mode = 2
+text = "A mdddessage"
+editable = false
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Chat/VBoxContainer"]
+layout_mode = 2
+
+[node name="LineEdit" type="LineEdit" parent="Chat/VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+
+[node name="SendButton" type="Button" parent="Chat/VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "Send"
+
+[connection signal="button_down" from="Chat/VBoxContainer/HBoxContainer/SendButton" to="Chat" method="_on_send_button_button_down"]

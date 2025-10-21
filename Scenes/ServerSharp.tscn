@@ -1,7 +1,9 @@
 [gd_scene load_steps=3 format=3 uid="uid://ktvfbuk21sew"]
 
-[ext_resource type="PackedScene" uid="uid://j1yf621wkk2k" path="res://Scenes/Server.tscn" id="1_e2a7c"]
-[ext_resource type="Script" path="res://Scenes/ServerSharp.cs" id="2_aquar"]
+[ext_resource type="Script" path="res://Scripts/ServerSharp.cs" id="2_aquar"]
+[ext_resource type="PackedScene" uid="uid://qr4yyu1lq6wj" path="res://Scenes/chat.tscn" id="2_nm5h3"]
 
-[node name="ServerSharp" instance=ExtResource("1_e2a7c")]
+[node name="ServerSharp" type="Node2D"]
 script = ExtResource("2_aquar")
+
+[node name="Chat" parent="." instance=ExtResource("2_nm5h3")]

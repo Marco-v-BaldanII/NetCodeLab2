@@ -1,13 +1,17 @@
 extends Control
-class_name ServerClientSceneLoader
+class_name OnlineMenu
 
-@export var server_scene : PackedScene
-@export var client_scene : PackedScene
+func _ready():
+	
+	$CenterContainer/VBoxContainer/ServerButton.pressed.connect(self._on_create_game_button_pressed)
+	$CenterContainer/VBoxContainer/ClientButton.pressed.connect(self._on_join_game_button_pressed)
 
-
-func _on_server_button_button_down() -> void:
-	get_tree().change_scene_to_packed(server_scene)
-
-
-func _on_client_button_button_down() -> void:
-	get_tree().change_scene_to_packed(client_scene)
+func _on_create_game_button_pressed():
+	NetPeer.init_host()
+	get_tree().change_scene_to_file("res://Scenes/WaitingRoom.tscn")
+	
+func _on_join_game_button_pressed():
+	var ip_address = "127.0.0.1"
+	
+	NetPeer.init_client(ip_address)
+	get_tree().change_scene_to_file("res://Scenes/WaitingRoom.tscn")

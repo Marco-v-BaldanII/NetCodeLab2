@@ -1,5 +1,11 @@
 extends Node
-class_name Client
+# Autload NetworkManager
+
+# signal for when chat info arrives
+signal chat_message_received(message: String)
+# signal for general server status updates
+signal server_status_update(message: String)
+
 
 var tcp_peer = StreamPeerTCP.new()
 var udp_peer = PacketPeerUDP.new()
@@ -17,6 +23,7 @@ func connect_to_server(ip_address):
 	var tcp_error = tcp_peer.connect_to_host(ip_address, TCP_PORT)
 	if tcp_error != OK:
 		print("TCP connection attempt failed:", tcp_error)
+		emit_signal("server_status_update", "Connection Failed: TCP Error %d" % tcp_error)
 		
 	# UDP Peer connectionless setup
 	udp_peer.set_dest_address(ip_address, UDP_PORT)
@@ -26,11 +33,21 @@ func connect_to_server(ip_address):
 	call_deferred("send_initial_messages")
 
 
+#  Public function for other scripts (like UI) to call ---
+func send_chat_message(message_content: String):
+	if message_content == "":
+		return
+		
+	# The server expects a prefix, so the server script knows to broadcast this
+	var prefixed_message = "CHAT_MSG: [You]: " + message_content
+	send_tcp_message(prefixed_message)
+
+
 func send_initial_messages():
 	# Wait to resolve connection attempt
 	await get_tree().create_timer(1).timeout
 	
-	#Sends a message with the user's name
+	# Sends a message with the user's name
 	send_tcp_message("Client: User_A is joining via TCP.")
 	send_udp_message("Client: User_A is sending a UDP message.")
 	
@@ -68,11 +85,18 @@ func _process(delta):
 				if data_result[0] == OK:
 					var data_bytes = data_result[1]
 					var received_string = data_bytes.get_string_from_utf8()
-					print("Received TCP reply: ", received_string)
+					
+					# Deal with Messages from the chat
+					if received_string.begins_with("[CHAT]"):
+						var chat_content = received_string.trim_prefix("[CHAT]").strip_edges()
+						emit_signal("chat_message_received", chat_content)
+					else:
+						# All other messages 
+						emit_signal("server_status_update", received_string)
 	
 	# ---UDP Polling ---
 	while udp_peer.get_available_packet_count() > 0:
-			var packet = udp_peer.get_packet()
-			var received_string = packet.get_string_from_utf8()
-			# This will contain the 'UDP Server ACK' reply
-			print("Received UDP reply: ", received_string)
+		var packet = udp_peer.get_packet()
+		var received_string = packet.get_string_from_utf8()
+		
+		emit_signal("server_status_update", "UDP Reply: " + received_string)

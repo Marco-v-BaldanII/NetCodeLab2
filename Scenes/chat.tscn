@@ -1,0 +1,36 @@
+[gd_scene load_steps=2 format=3 uid="uid://qr4yyu1lq6wj"]
+
+[ext_resource type="Script" path="res://Scripts/chat.gd" id="1_rs0pd"]
+
+[node name="Chat" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 42.0
+offset_top = 176.0
+offset_right = 464.0
+offset_bottom = 653.0
+script = ExtResource("1_rs0pd")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_right = 354.0
+offset_bottom = 468.0
+
+[node name="TextEdit" type="TextEdit" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 400)
+layout_mode = 2
+editable = false
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+
+[node name="SendButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "Send"
+
+[connection signal="button_down" from="VBoxContainer/HBoxContainer/SendButton" to="." method="_on_send_button_button_down"]
