@@ -1,0 +1,9 @@
+[gd_scene load_steps=4 format=3 uid="uid://c15n4tbsk1wgv"]
+
+[ext_resource type="PackedScene" uid="uid://hn6fty7rvsp" path="res://Scenes/Main.tscn" id="1_2d6j4"]
+[ext_resource type="PackedScene" uid="uid://ktvfbuk21sew" path="res://Scenes/ServerSharp.tscn" id="2_yfowx"]
+[ext_resource type="PackedScene" uid="uid://bc1pcy4tc1v1v" path="res://Scenes/ClientSharp.tscn" id="3_43cxm"]
+
+[node name="Main" instance=ExtResource("1_2d6j4")]
+server_scene = ExtResource("2_yfowx")
+client_scene = ExtResource("3_43cxm")

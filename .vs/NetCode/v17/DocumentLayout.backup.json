@@ -1,0 +1,37 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\marco\\Documents\\netcode\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{708D261A-D9AB-4FA9-89F4-C8D5815C6F7A}|NetCode.csproj|c:\\users\\marco\\documents\\netcode\\scenes\\serversharp.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{708D261A-D9AB-4FA9-89F4-C8D5815C6F7A}|NetCode.csproj|solutionrelative:scenes\\serversharp.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ServerSharp.cs",
+              "DocumentMoniker": "C:\\Users\\marco\\Documents\\netcode\\Scenes\\ServerSharp.cs",
+              "RelativeDocumentMoniker": "Scenes\\ServerSharp.cs",
+              "ToolTip": "C:\\Users\\marco\\Documents\\netcode\\Scenes\\ServerSharp.cs",
+              "RelativeToolTip": "Scenes\\ServerSharp.cs",
+              "ViewState": "AgIAAAMAAAAAAAAAAAAAAAcAAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-10-21T16:52:56.561Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

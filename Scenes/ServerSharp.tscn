@@ -1,0 +1,7 @@
+[gd_scene load_steps=3 format=3 uid="uid://ktvfbuk21sew"]
+
+[ext_resource type="PackedScene" uid="uid://j1yf621wkk2k" path="res://Scenes/Server.tscn" id="1_e2a7c"]
+[ext_resource type="Script" path="res://Scenes/ServerSharp.cs" id="2_aquar"]
+
+[node name="ServerSharp" instance=ExtResource("1_e2a7c")]
+script = ExtResource("2_aquar")
