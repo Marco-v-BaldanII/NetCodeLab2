@@ -6,7 +6,4 @@
 
 [node name="Chat" parent="." instance=ExtResource("1_8brdy")]
 
-[node name="TextEdit" parent="Chat/VBoxContainer" index="0"]
-text = ""
-
 [editable path="Chat"]
