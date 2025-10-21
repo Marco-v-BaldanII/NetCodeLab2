@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://hn6fty7rvsp"]
+[gd_scene load_steps=4 format=3 uid="uid://hn6fty7rvsp"]
 
 [ext_resource type="Script" path="res://Scripts/server_client_scene_loader.gd" id="1_hxxwl"]
+[ext_resource type="PackedScene" uid="uid://j1yf621wkk2k" path="res://Scenes/Server.tscn" id="2_l1hqn"]
+[ext_resource type="PackedScene" path="res://Scenes/Client.tscn" id="3_qdx6t"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -12,6 +14,8 @@ offset_bottom = -648.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_hxxwl")
+server_scene = ExtResource("2_l1hqn")
+client_scene = ExtResource("3_qdx6t")
 
 [node name="CenterContainer" type="CenterContainer" parent="."]
 layout_mode = 0

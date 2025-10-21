@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://spcfipe0q8e5"]
+
+[ext_resource type="Script" path="res://Scripts/net_peer.gd" id="1_3u2im"]
+
+[node name="NetPeer" type="Node2D"]
+script = ExtResource("1_3u2im")

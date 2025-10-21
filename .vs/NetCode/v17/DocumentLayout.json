@@ -1,12 +1,54 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\marco\\Documents\\netcode\\",
-  "Documents": [],
+  "WorkspaceRootPath": "C:\\Users\\marco\\Documents\\Git\\NetCodeLab2\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{708D261A-D9AB-4FA9-89F4-C8D5815C6F7A}|NetCode.csproj|c:\\users\\marco\\documents\\git\\netcodelab2\\scripts\\clientsharp.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{708D261A-D9AB-4FA9-89F4-C8D5815C6F7A}|NetCode.csproj|solutionrelative:scripts\\clientsharp.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{708D261A-D9AB-4FA9-89F4-C8D5815C6F7A}|NetCode.csproj|c:\\users\\marco\\documents\\git\\netcodelab2\\scenes\\serversharp.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{708D261A-D9AB-4FA9-89F4-C8D5815C6F7A}|NetCode.csproj|solutionrelative:scenes\\serversharp.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ClientSharp.cs",
+              "DocumentMoniker": "C:\\Users\\marco\\Documents\\Git\\NetCodeLab2\\Scripts\\ClientSharp.cs",
+              "RelativeDocumentMoniker": "Scripts\\ClientSharp.cs",
+              "ToolTip": "C:\\Users\\marco\\Documents\\Git\\NetCodeLab2\\Scripts\\ClientSharp.cs",
+              "RelativeToolTip": "Scripts\\ClientSharp.cs",
+              "ViewState": "AgIAAC0AAAAAAAAAAAAowBUAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-10-21T21:47:37.363Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "ServerSharp.cs",
+              "DocumentMoniker": "C:\\Users\\marco\\Documents\\Git\\NetCodeLab2\\Scenes\\ServerSharp.cs",
+              "RelativeDocumentMoniker": "Scenes\\ServerSharp.cs",
+              "ToolTip": "C:\\Users\\marco\\Documents\\Git\\NetCodeLab2\\Scenes\\ServerSharp.cs",
+              "RelativeToolTip": "Scenes\\ServerSharp.cs",
+              "ViewState": "AgIAAFEAAAAAAAAAAAAowDwAAAAGAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-10-21T21:47:09.07Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }
