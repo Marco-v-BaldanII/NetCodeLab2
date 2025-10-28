@@ -13,31 +13,39 @@ signal peer_disconnected(id)
 
 const SERVER_IP = "127.0.0.1"
 const TCP_PORT = 5000
-const UDP_PORT = 5001
+const UDP_PORT = 5001 # Host listens here. Client uses unique port.
 
 # --- SYNCHRONIZATION CONSTANTS ---
 const PACKET_TYPE_SYNC = 0x01
 const NETID_ASSIGNMENT = "NETID_ASSIGNMENT:"
+const CLIENT_UDP_PORT_ASSIGNMENT = "CLIENT_UDP_PORT_ASSIGNMENT:" # NEW
 
-var client_tcp_peer = StreamPeerTCP.new()
-var client_udp_peer = PacketPeerUDP.new()
+var client_tcp_peer := StreamPeerTCP.new()
+var client_udp_peer := PacketPeerUDP.new()
 
 # Sockets and Lists used when current_mode is HOST
-var host_tcp_server = TCPServer.new()
-var host_udp_server = UDPServer.new()
-var host_tcp_peers = []
-var initialized_peers = {} # Host tracks StreamPeerTCPs that have received initial sync
+var host_tcp_server := TCPServer.new()
+var host_udp_server := UDPServer.new()
+var host_tcp_peers : Array = [] # List of StreamPeerTCPs
+var client_udp_endpoints : Dictionary = {} # Maps client_id to {ip: String, port: int}
 
-# --- SYNCHRONIZATION REGISTRY (The Server's Key) ---
+# --- HOST TRACKING ---
+var next_client_id : int = 2
+var host_peers_by_id : Dictionary = {} # Maps client_id -> StreamPeerTCP
+var initialized_peers : Dictionary = {} # Maps StreamPeerTCP -> client_id (Used to find ID quickly for TCP cleanup/updates)
+
+# --- SYNCHRONIZATION REGISTRY ---
 var next_net_id : int = 100
-# Dictionary of Ids and synchronizers
 var net_id_to_synchronizer_map : Dictionary = {}
 
 # --- SYNCHRONIZATION UPDATE RATE ---
-const SYNC_RATE_PER_SECOND = 3.0 # update frequency per second
+const SYNC_RATE_PER_SECOND = 10.0
 var _sync_timer: float = 0.0
 
-var local_client_id : int = -1 # 0 host, 1 client
+var local_client_id : int = -1 # 0 host, >=1 client
+var is_initial_sync_complete : bool = false # Client-side gate for sync packets
+
+# --- INITIALIZATION ---
 
 func init_host():
 	if current_mode != NetMode.DISCONNECTED: return
@@ -50,10 +58,15 @@ func init_host():
 func init_client(ip_address):
 	if current_mode != NetMode.DISCONNECTED: return
 	current_mode = NetMode.CLIENT
+	
+	# 🔴 FIX 1: Client MUST bind to port 0 to get a unique, available port.
+	var udp_error = client_udp_peer.bind(0)
+	if udp_error != OK:
+		print("UDP Client failed to bind unique port (Error: %d). UDP sync will fail." % udp_error)
+		
 	connect_to_server(ip_address)
 	print("NetPeer initialized as CLIENT, connecting to %s." % ip_address)
 	local_client_id = 1
-
 
 func start_server():
 	var tcp_error = host_tcp_server.listen(TCP_PORT)
@@ -111,41 +124,48 @@ func register_synchronizer(synchronizer_node: Synchronizer) -> int:
 	next_net_id += 1
 	return new_net_id
 
-# MODIFIED: Use initialized_peers to filter broadcasts
-func send_tcp_synchronization_data(data: PackedByteArray, network_object_id: int, target_peer: StreamPeerTCP = null):
+func send_synchronization_data(data: PackedByteArray, network_object_id: int, target_peer: StreamPeerTCP = null, protocol: Synchronizer.PROTOCOL = Synchronizer.PROTOCOL.UDP):
 	
 	var stream = StreamPeerBuffer.new()
-	
-	# Write Synchronization Header
 	stream.put_u8(PACKET_TYPE_SYNC)
 	stream.put_u32(network_object_id)
-	
-	# Write Synchronization Payload (the serialized dictionary)
 	stream.put_data(data)
-	
 	var final_payload = stream.data_array
 	
 	match current_mode:
 		NetMode.HOST:
-			if target_peer:
-				# 1. Initial Snapshot: Send ONLY to the specified peer (bypasses initialization check)
-				_send_framed_data_to_peer(target_peer, final_payload)
-			else:
-				# 2. Continuous Updates: Send ONLY to fully initialized peers (CRITICAL FILTER)
-				for peer in host_tcp_peers:
-					if initialized_peers.has(peer): # Only send to clients marked as ready
-						_send_framed_data_to_peer(peer, final_payload)
-		
+			if protocol == Synchronizer.PROTOCOL.TCP :
+				if target_peer:
+					_send_framed_data_to_peer(target_peer, final_payload)
+				else:
+					for peer in host_tcp_peers:
+						if initialized_peers.has(peer):    
+							_send_framed_data_to_peer(peer, final_payload)
+			
+			elif protocol == Synchronizer.PROTOCOL.UDP:
+				# UDP: Unreliable, Unframed Broadcast
+				var udp_sender = PacketPeerUDP.new()
+				
+				for client_id in client_udp_endpoints:
+					var endpoint = client_udp_endpoints[client_id]
+					
+					# 1. Set the destination address for the outgoing packet
+					udp_sender.set_dest_address(endpoint.ip, endpoint.port)
+					
+					# 2. Put the packet on the wire
+					udp_sender.put_packet(final_payload)
+					
 		NetMode.CLIENT:
-			# Client always sends ONLY to the Host
-			_send_framed_data_to_peer(client_tcp_peer, final_payload)
+			if protocol == Synchronizer.PROTOCOL.TCP :
+				_send_framed_data_to_peer(client_tcp_peer, final_payload)
+			
+			elif protocol == Synchronizer.PROTOCOL.UDP :
+				client_udp_peer.put_packet(final_payload)
 
-# Helper to send a raw binary packet with framing
+# Helper to send a raw binary packet with framing (used for TCP)
 func _send_framed_data_to_peer(peer: StreamPeerTCP, data: PackedByteArray):
 	if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
-		# Prefix with size (framing)
 		peer.put_u32(data.size())
-		# send the raw binary data
 		peer.put_data(data)
 
 func _route_synchronization_packet(data_bytes: PackedByteArray, sender_peer: StreamPeerTCP = null):
@@ -156,7 +176,6 @@ func _route_synchronization_packet(data_bytes: PackedByteArray, sender_peer: Str
 	
 	var network_id = stream.get_u32() # Consume Network ID (4 bytes)
 	
-	# CORRECTED: Calculate remaining bytes
 	var remaining_size = stream.get_size() - stream.get_position()
 	var sync_payload = stream.get_data(remaining_size)
 	
@@ -165,27 +184,24 @@ func _route_synchronization_packet(data_bytes: PackedByteArray, sender_peer: Str
 		var synchronizer_script : Synchronizer = net_id_to_synchronizer_map[network_id]
 		
 		if is_instance_valid(synchronizer_script):
-			synchronizer_script.receive(sync_payload[1])
-			print("SYNC Packet routed to NetID: ", network_id)
+			synchronizer_script.receive(sync_payload[1]) 
 		else:
-			# Clean up map if the node was deleted
 			net_id_to_synchronizer_map.erase(network_id)
 			push_warning("SYNC: Invalid instance found for NetID %d" % network_id)
 	else:
 		push_warning("SYNC: Failed to find object with Network ID: " + str(network_id))
 
-	# Host rebroadcast logic
+	# Host rebroadcast logic (Only for TCP packets received from clients)
 	if current_mode == NetMode.HOST and sender_peer != null:
-		# The host only re-broadcasts the payload part of the packet (the data_bytes)
+		# Rebroadcast the full packet to other clients
 		for peer in host_tcp_peers:
 			if peer != sender_peer:
-				_send_framed_data_to_peer(peer, data_bytes) # data_bytes already has sync header
+				_send_framed_data_to_peer(peer, data_bytes) 
 
 func send_tcp_message_as_client(message):
 	if client_tcp_peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
 		var encoded_data = message.to_utf8_buffer()
-		client_tcp_peer.put_u32(encoded_data.size())
-		client_tcp_peer.put_data(encoded_data)
+		_send_framed_data_to_peer(client_tcp_peer, encoded_data)
 		print("Sent TCP message (C->S): ", message)
 	else:
 		print("Client TCP not connected, cannot send.")
@@ -213,34 +229,31 @@ func _process(delta):
 	if current_mode == NetMode.HOST:
 		poll_as_host()
 	elif current_mode == NetMode.CLIENT:
-		poll_as_client() 
+		poll_as_client()
 		
 	# 2. Handle Fixed-Rate Synchronization (HOST ONLY)
 	if current_mode == NetMode.HOST:
 		_sync_timer += delta
 		if _sync_timer >= 1.0 / SYNC_RATE_PER_SECOND:
 			_update_all_synchronizers()
-			_sync_timer = 0.0 # Reset the timer
-
-var next_client_id : int = 2
-var host_peers_by_id : Dictionary 
+			_sync_timer = 0.0
 
 func poll_as_host():
 	# 1. Accept New Connections
 	if host_tcp_server.is_listening() and host_tcp_server.is_connection_available():
 		var new_peer : StreamPeerTCP = host_tcp_server.take_connection()
 		
-		# NOTE: Host peers is being double-appended (once here, once below), 
-		# but maintaining the structure you provided.
-		host_tcp_peers.append(new_peer) 
 		var assigned_id = next_client_id
 		next_client_id += 1
 		
-		host_tcp_peers.append(new_peer) # Second append
-		host_peers_by_id[assigned_id] = new_peer 
+		host_tcp_peers.append(new_peer)
+		host_peers_by_id[assigned_id] = new_peer
 		
-		print("New TCP Client connected! Total peers: %d" % host_tcp_peers.size())
-		emit_signal("peer_connected", host_tcp_peers.size())
+		# Register the client's UDP endpoint with a placeholder port
+		_register_client_udp_endpoint(assigned_id, new_peer) 
+		
+		print("New TCP Client connected! ID: %d, Total peers: %d" % [assigned_id, host_tcp_peers.size()])
+		emit_signal("peer_connected", assigned_id)
 		
 		# Send initial peer ID assignment
 		var initial_message : String = "SERVER_ID_ASSIGNMENT:%d" % assigned_id
@@ -249,7 +262,6 @@ func poll_as_host():
 		# --- Send all existing NetID assignments to the new client (CRITICAL) ---
 		for net_id in net_id_to_synchronizer_map:
 			var sync_node : Synchronizer = net_id_to_synchronizer_map[net_id]
-			# We use the parent's path to allow the client to find the local object
 			var sync_path = sync_node.parent.get_path()
 			
 			var message = "%s%d:%s" % [NETID_ASSIGNMENT, net_id, sync_path]
@@ -258,13 +270,11 @@ func poll_as_host():
 		# --- Send the full synchronization snapshot ONLY to the new client ---
 		send_synchronizers_in_tree(new_peer) # Directs sync to one peer
 
-		# NEW: Mark this peer as initialized (ready for continuous broadcasts)
-		initialized_peers[new_peer] = true
+		# Store peer for quick lookup (used in TCP cleanup/UDP update)
+		initialized_peers[new_peer] = assigned_id
 		
 		broadcast_tcp_message(new_peer, "Server_Godot_Online")
-	
-	# --- NOTE: FIXED-RATE SYNCHRONIZATION LOGIC HAS BEEN MOVED TO _process(delta) ---
-	
+		
 	# 2. TCP Polling from existing Clients
 	for i in range(host_tcp_peers.size() - 1, -1, -1):
 		var peer = host_tcp_peers[i]
@@ -272,13 +282,21 @@ func poll_as_host():
 		
 		# Handle disconnection
 		if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
-			# NEW: Clean up initialized_peers on disconnect
+			var client_id = -1
 			if initialized_peers.has(peer):
+				client_id = initialized_peers[peer]
 				initialized_peers.erase(peer)
 				
+			if host_peers_by_id.has(client_id):
+				host_peers_by_id.erase(client_id)
+				
+			# Cleanup UDP endpoint dictionary as well
+			if client_udp_endpoints.has(client_id):
+				client_udp_endpoints.erase(client_id)
+				
 			host_tcp_peers.remove_at(i)
-			print("TCP Client disconnected. Total peers: %d" % host_tcp_peers.size())
-			emit_signal("peer_disconnected", host_tcp_peers.size())
+			print("TCP Client disconnected (ID: %d). Total peers: %d" % [client_id, host_tcp_peers.size()])
+			emit_signal("peer_disconnected", client_id)
 			continue
 
 		while peer.get_available_bytes() >= 4:
@@ -293,14 +311,24 @@ func poll_as_host():
 					var packet_type = data_bytes[0]
 					
 					if packet_type == PACKET_TYPE_SYNC:
-						_route_synchronization_packet(data_bytes, peer) # Route and Rebroadcast
+						_route_synchronization_packet(data_bytes, peer) # Route and Rebroadcast (TCP sync)
 					else:
 						# Treat as chat/text message
 						var message = data_bytes.get_string_from_utf8()
-						print("HOST RECEIVED AND DECODED: ", message)
 						
-						# Process Message
-						if message.begins_with("CHAT_MSG:"):
+						# 🔴 FIX 3: Host receives client's unique UDP port
+						if message.begins_with(CLIENT_UDP_PORT_ASSIGNMENT):
+							var port_str = message.trim_prefix(CLIENT_UDP_PORT_ASSIGNMENT)
+							var port_num = int(port_str)
+							
+							if initialized_peers.has(peer):
+								var client_id = initialized_peers[peer]
+								if client_udp_endpoints.has(client_id):
+									client_udp_endpoints[client_id].port = port_num
+									print("Host updated UDP port for client %d to %d" % [client_id, port_num])
+						
+						# Process other messages
+						elif message.begins_with("CHAT_MSG:"):
 							var chat_content = message.trim_prefix("CHAT_MSG:")
 							broadcast_tcp_message(peer, chat_content)
 							emit_signal("chat_message_received", chat_content)
@@ -311,45 +339,43 @@ func poll_as_host():
 			else:
 				break
 				
-	# 3. UDP Poll
+	# 3. UDP Poll (Handle unsolicited client UDP packets)
 	if host_udp_server.is_listening():
 		host_udp_server.poll()
 		while host_udp_server.is_connection_available():
 			var peer = host_udp_server.take_connection()
 			while peer.get_available_packet_count() > 0:
 				var packet = peer.get_packet()
-				var received_string = packet.get_string_from_utf8()
+				var packet_type = packet[0]
 				
-				var ack_packet = "UDP Server ACK".to_utf8_buffer()
-				peer.put_packet(ack_packet)
-				
-				emit_signal("server_status_update", "Received UDP data from client, sent ACK.")
+				if packet_type == PACKET_TYPE_SYNC:
+					_route_synchronization_packet(packet)
+				else:
+					var received_string = packet.get_string_from_utf8()
+					
+					var ack_packet = "UDP Server ACK".to_utf8_buffer()
+					peer.put_packet(ack_packet)
+					
+					emit_signal("server_status_update", "Received UDP data from client, sent ACK: " + received_string)
 
 func send_tcp_message_as_host(peer, message):
 	var encoded_data = message.to_utf8_buffer()
-	peer.put_u32(encoded_data.size())
-	peer.put_data(encoded_data)
-
-var is_initial_sync_complete : bool = false # Gate for sync packets
+	_send_framed_data_to_peer(peer, encoded_data)
 
 ### NEW: Waits until a node path is registered in the scene tree ###
 func _wait_for_node_by_path(node_path: String) -> Node:
 	var target_node : Node = get_node_or_null(node_path)
-	
 	var attempts = 0
-	# Wait loop: checks every frame for up to 600 frames (~10 seconds at 60 FPS)
+	
 	while not is_instance_valid(target_node) and attempts < 600:
-		# Await one process frame: This yields control to the engine, allowing it to complete
-		# its node registration process before we check again.
 		await get_tree().process_frame
 		target_node = get_node_or_null(node_path)
 		attempts += 1
-		
+			
 	return target_node
 
-# CRITICAL CHANGE: poll_as_client MUST be async to use 'await'
 func poll_as_client():
-	# TCP Polling
+	# 1. TCP Polling (Handles assignments, chat, and reliable sync)
 	client_tcp_peer.poll()
 
 	if client_tcp_peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
@@ -361,21 +387,23 @@ func poll_as_client():
 				
 				if data_result[0] == OK:
 					var data_bytes = data_result[1]
+					
+					#  Check if the data array is empty
+					if data_bytes.size() == 0:
+						push_warning("Received an empty TCP packet. Dropping.")
+						continue 
+						
 					var packet_type = data_bytes[0]
 					
 					if packet_type == PACKET_TYPE_SYNC:
-						# Gate: Only route sync data if initialization is complete
 						if is_initial_sync_complete:
-							_route_synchronization_packet(data_bytes) # Route locally
+							_route_synchronization_packet(data_bytes)
 						else:
-							push_warning("Client received sync packet before initialization. Dropping.")
+							push_warning("Client received TCP sync packet before initialization. Dropping.")
 					else:
-						# Treat as text/chat message
 						var received_string = data_bytes.get_string_from_utf8()
-						print("CLIENT RECEIVED AND DECODED: ", received_string)
 						
 						if received_string.begins_with(NETID_ASSIGNMENT):
-							# Handle NetID Assignment message (CRITICAL)
 							var assignment_data = received_string.trim_prefix(NETID_ASSIGNMENT)
 							var parts = assignment_data.split(":", false)
 							
@@ -383,20 +411,23 @@ func poll_as_client():
 								var net_id = int(parts[0])
 								var node_path = parts[1]
 								
-								# FIX: Wait ONLY until the node is available, then continue
 								var target_node : Node = await _wait_for_node_by_path(node_path)
 								
 								if is_instance_valid(target_node) and target_node.has_node("Synchronizer"):
 									var synchronizer_script = target_node.get_node("Synchronizer")
 									
-									# Set the local ID to match the Host's unique ID
 									synchronizer_script.network_object_id = net_id
-									# Register the ID in the client's map for future lookups
 									net_id_to_synchronizer_map[net_id] = synchronizer_script
 									
-									# If we've assigned an ID, the gate can open
-									is_initial_sync_complete = true 
-									
+									if not is_initial_sync_complete:
+										is_initial_sync_complete = true # Gate open on first successful assignment
+										
+										# 🔴 FIX 2: Send the client's unique UDP port to the Host
+										var unique_udp_port = client_udp_peer.get_local_port()
+										var port_message = CLIENT_UDP_PORT_ASSIGNMENT + str(unique_udp_port)
+										send_tcp_message_as_client(port_message)
+										print("Client sent unique UDP port %d to Host." % unique_udp_port)
+										
 									emit_signal("server_status_update", "NetID Assigned: %d for %s" % [net_id, node_path])
 								else:
 									push_warning("CLIENT: Node lookup failed even after waiting for path: " + node_path)
@@ -413,33 +444,52 @@ func poll_as_client():
 			else:
 				break
 	
-	# UDP Polling
+	# 2. UDP Polling (Receives UDP sync and other UDP messages)
 	while client_udp_peer.get_available_packet_count() > 0:
 		var packet = client_udp_peer.get_packet()
-		var received_string = packet.get_string_from_utf8()
 		
-		emit_signal("server_status_update", "UDP Reply: " + received_string)
+		# ✅ FIX 2: Check if the UDP packet is empty before accessing index [0]
+		if packet.size() == 0:
+			push_warning("Received an empty UDP packet. Dropping.")
+			continue
+			
+		var packet_type = packet[0]
+		
+		if packet_type == PACKET_TYPE_SYNC:
+			if is_initial_sync_complete:
+				_route_synchronization_packet(packet)
+		else:
+			var received_string = packet.get_string_from_utf8()
+			emit_signal("server_status_update", "UDP Reply: " + received_string)
 
-# Iterates over all REGISTERED synchronizers and broadcasts their state.
+
 func _update_all_synchronizers():
 	if current_mode != NetMode.HOST: return
 	
 	for net_id in net_id_to_synchronizer_map:
 		var synchronizer : Synchronizer = net_id_to_synchronizer_map[net_id]
 		if is_instance_valid(synchronizer):
-			# Broadcast to all clients
 			synchronizer.send()
 
-# optional target_peer for directed synchronization
-# called for the intial 'snapshot' aka when the client connects to the host and we normalize synchronizerIDs
 func send_synchronizers_in_tree(target_peer: StreamPeerTCP = null):
 	var root : Node = get_tree().root
 	send_synchronizers_in_children(root, target_peer)
 
-# Added optional target_peer for directed synchronization
 func send_synchronizers_in_children(parent : Node, target_peer: StreamPeerTCP = null):
 	for child in parent.get_children():
 		if child is Synchronizer:
-			# NOTE: Synchronizer.gd's send() MUST accept 'target_peer'
 			child.send(target_peer)
 		send_synchronizers_in_children(child, target_peer)
+
+# Function to capture the client's UDP endpoint
+func _register_client_udp_endpoint(client_id: int, peer: StreamPeerTCP):
+	var ip_address = peer.get_connected_host() 
+
+	# 🔴 FIX 1 (Host): Force loopback IP for local testing reliability.
+	ip_address = "127.0.0.1" 
+
+	client_udp_endpoints[client_id] = {
+		"ip": ip_address,	
+		"port": UDP_PORT # Placeholder port until client sends its unique port
+	}
+	print("Host registering client ", client_id, " for UDP sync at ", ip_address, ":", UDP_PORT)
