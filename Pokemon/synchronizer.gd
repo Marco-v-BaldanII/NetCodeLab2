@@ -4,22 +4,39 @@ class_name Synchronizer
 @onready var parent : Node = $".."
 @export var synch_properties : Array[String]
 
-var ID : int
+# This holds the unique, server-assigned integer ID (the NetID).
+# We initialize it to -1, which is invalid, until the Server assigns a positive ID.
+var network_object_id : int = -1 
 
 func _ready() -> void:
-	ID = parent.get_multiplayer_authority()
+	# Only the Host is allowed to assign unique Network IDs.
+	if NetPeer.current_mode == NetPeer.NetMode.HOST:
+		# Call the NetPeer singleton to assign a unique ID and register this instance.
+		network_object_id = NetPeer.register_synchronizer(self)
+	else:
+		# The Client does nothing here. It waits for the Host to send a 
+		# NETID_ASSIGNMENT message later to set the network_object_id.
+		pass
 
-func send() :
+# MODIFIED: Added optional 'target_peer' argument.
+func send(target_peer: StreamPeerTCP = null):
+	# Crucial check: Do not send if the object hasn't been assigned its unique ID yet.
+	# (This is still the primary safety check for Clients)
+	if network_object_id == -1: return
+
 	var data_dic : Dictionary
 	
 	for property in synch_properties:
 		
 		var value = parent.get(property)
 		data_dic[property] = value
+		
 	data_dic["_sender_id"] = NetPeer.local_client_id
 	
 	var binary_data : PackedByteArray = var_to_bytes(data_dic)
-	NetPeer.send_tcp_binary(binary_data, 0)
+	
+	# CRITICAL CHANGE: Pass the optional target_peer to the NetPeer's sending function.
+	NetPeer.send_tcp_synchronization_data(binary_data, network_object_id, target_peer)
 
 
 func receive(received_data: PackedByteArray):
@@ -29,8 +46,8 @@ func receive(received_data: PackedByteArray):
 		for property in received_dic:
 			if property in synch_properties:
 				parent.set(property, received_dic[property])
+				print("Synched property " + property)
 			else:
-				
 				push_warning("Received property not in synch_properties: " + property)
 		
 	else:
