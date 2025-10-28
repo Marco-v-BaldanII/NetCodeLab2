@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3 uid="uid://cxtbog2y78rkd"]
+
+[ext_resource type="Script" path="res://Pokemon/pokemon.gd" id="1_3qr15"]
+[ext_resource type="Script" path="res://Pokemon/synchronizer.gd" id="2_2w6jj"]
+
+[node name="Pokemon" type="Node"]
+script = ExtResource("1_3qr15")
+
+[node name="Synchronizer" type="Node" parent="."]
+script = ExtResource("2_2w6jj")
+synch_properties = Array[String](["my_name", "level", "type"])

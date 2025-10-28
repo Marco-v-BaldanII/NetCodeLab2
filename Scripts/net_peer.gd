@@ -24,11 +24,14 @@ var host_udp_server = UDPServer.new()
 var host_tcp_peers = [] 
 
 
+var local_client_id : int = -1 # 0 host, 1 client
+
 func init_host():
 	if current_mode != NetMode.DISCONNECTED: return
 	current_mode = NetMode.HOST
 	start_server()
 	print("NetPeer initialized as HOST.")
+	local_client_id = 0
 
 
 func init_client(ip_address):
@@ -36,6 +39,7 @@ func init_client(ip_address):
 	current_mode = NetMode.CLIENT
 	connect_to_server(ip_address)
 	print("NetPeer initialized as CLIENT, connecting to %s." % ip_address)
+	local_client_id = 1
 
 
 
@@ -90,6 +94,34 @@ func send_chat_message(message_content: String):
 		send_tcp_message_as_client(prefixed_message)
 
 
+#  Sends binary data with a destination ID
+func send_tcp_binary(data: PackedByteArray, target_id: int):
+	match current_mode:
+		NetMode.HOST:
+			# Server broadcasting to one client (or all)
+			# You would need to look up the StreamPeerTCP from host_peers_by_id
+			if target_id == 0: # 0 will be a flag for 'all clients'
+				#-- send to all --#
+				for id in host_peers_by_id:
+					_send_binary_to_peer(host_peers_by_id[id], data)
+			elif host_peers_by_id.has(target_id):
+				#-- send to concrete client--#
+				_send_binary_to_peer(host_peers_by_id[target_id], data)
+		
+		NetMode.CLIENT:
+			# Client sends ONLY to the Server (ID 1)
+			_send_binary_to_peer(client_tcp_peer, data)
+
+
+# Helper to send a raw binary packet (requires framing)
+func _send_binary_to_peer(peer, data: PackedByteArray):
+	if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+		# Prefix with size (framing)
+		peer.put_u32(data.size()) 
+		# send the raw binary data
+		peer.put_data(data)
+
+
 func send_tcp_message_as_client(message):
 	if client_tcp_peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
 		var encoded_data = message.to_utf8_buffer()
@@ -124,16 +156,28 @@ func _process(delta):
 	elif current_mode == NetMode.CLIENT:
 		poll_as_client()
 
+var next_client_id : int = 2
+var host_peers_by_id : Dictionary # dictionary of (id , peerTCP)
 
 func poll_as_host():
 	# Accept New Connections
 	if host_tcp_server.is_listening() and host_tcp_server.is_connection_available():
-		var new_peer = host_tcp_server.take_connection()
+		var new_peer : StreamPeerTCP = host_tcp_server.take_connection()
 		host_tcp_peers.append(new_peer)
+		var assigned_id = next_client_id
+		next_client_id += 1 # Increment for the next clientç
+		
+		host_tcp_peers.append(new_peer) # Keep the list for cleanup/looping for now
+		host_peers_by_id[assigned_id] = new_peer # Map the ID to the peer
+		
 		print("New TCP Client connected! Total peers: %d" % host_tcp_peers.size())
 		emit_signal("peer_connected", host_tcp_peers.size())
 		
 		# Send initial reply
+		var initial_message : String = "SERVER_ID_ASSIGNMENT:%d" % assigned_id
+		# SEND to the new client it's ID, ONLY to the new client since only it and the server need to know
+		send_tcp_message_as_host(new_peer, initial_message)
+		
 		broadcast_tcp_message(new_peer, "Server_Godot_Online")
 	
 	#  TCP from existing Clients
@@ -226,3 +270,15 @@ func poll_as_client():
 		var received_string = packet.get_string_from_utf8()
 		
 		emit_signal("server_status_update", "UDP Reply: " + received_string)
+
+func send_synchronizers_in_tree():
+	var root : Node = get_tree().root
+	send_synchronizers_in_children(root)
+
+func send_synchronizers_in_children(parent : Node):
+	for child in parent.get_children():
+		if child is Synchronizer:
+			# Instead of this we should add all the data into a packet and send it
+			child.send()
+			# recursive
+		send_synchronizers_in_children(child)

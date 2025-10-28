@@ -1,5 +1,4 @@
 extends Node
-# Autload NetworkManager
 
 # signal for when chat info arrives
 signal chat_message_received(message: String)

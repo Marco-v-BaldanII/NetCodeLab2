@@ -2,5 +2,5 @@
 
 [ext_resource type="Script" path="res://Scripts/client.gd" id="1_1adai"]
 
-[node name="Client" type="Node2D"]
+[node name="NetworkManager" type="Node2D"]
 script = ExtResource("1_1adai")
