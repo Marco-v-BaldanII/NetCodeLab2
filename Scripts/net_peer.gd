@@ -33,6 +33,9 @@ var next_net_id : int = 100
 # Dictionary of Ids and synchronizers
 var net_id_to_synchronizer_map : Dictionary = {}
 
+# --- SYNCHRONIZATION UPDATE RATE ---
+const SYNC_RATE_PER_SECOND = 3.0 # update frequency per second
+var _sync_timer: float = 0.0
 
 var local_client_id : int = -1 # 0 host, 1 client
 
@@ -204,28 +207,36 @@ func broadcast_tcp_message(sender_peer, message):
 			peer.put_u32(packet_size)
 			peer.put_data(encoded_data)
 
-
+# Updated _process: Manages the timer
 func _process(delta):
+	# 1. Update Polling
 	if current_mode == NetMode.HOST:
 		poll_as_host()
 	elif current_mode == NetMode.CLIENT:
-		# CRITICAL: Call the async function without 'await' here to prevent blocking _process.
-		poll_as_client()
+		poll_as_client() 
+		
+	# 2. Handle Fixed-Rate Synchronization (HOST ONLY)
+	if current_mode == NetMode.HOST:
+		_sync_timer += delta
+		if _sync_timer >= 1.0 / SYNC_RATE_PER_SECOND:
+			_update_all_synchronizers()
+			_sync_timer = 0.0 # Reset the timer
 
 var next_client_id : int = 2
 var host_peers_by_id : Dictionary 
 
-# MODIFIED: Added initialized_peers logic
 func poll_as_host():
-	# Accept New Connections
+	# 1. Accept New Connections
 	if host_tcp_server.is_listening() and host_tcp_server.is_connection_available():
 		var new_peer : StreamPeerTCP = host_tcp_server.take_connection()
-		host_tcp_peers.append(new_peer)
+		
+		# NOTE: Host peers is being double-appended (once here, once below), 
+		# but maintaining the structure you provided.
+		host_tcp_peers.append(new_peer) 
 		var assigned_id = next_client_id
 		next_client_id += 1
 		
-		# Host is double-appending new_peer here, maintaining original structure.
-		host_tcp_peers.append(new_peer) 
+		host_tcp_peers.append(new_peer) # Second append
 		host_peers_by_id[assigned_id] = new_peer 
 		
 		print("New TCP Client connected! Total peers: %d" % host_tcp_peers.size())
@@ -235,7 +246,7 @@ func poll_as_host():
 		var initial_message : String = "SERVER_ID_ASSIGNMENT:%d" % assigned_id
 		send_tcp_message_as_host(new_peer, initial_message)
 		
-		# --- 1. Send all existing NetID assignments to the new client (CRITICAL) ---
+		# --- Send all existing NetID assignments to the new client (CRITICAL) ---
 		for net_id in net_id_to_synchronizer_map:
 			var sync_node : Synchronizer = net_id_to_synchronizer_map[net_id]
 			# We use the parent's path to allow the client to find the local object
@@ -244,15 +255,17 @@ func poll_as_host():
 			var message = "%s%d:%s" % [NETID_ASSIGNMENT, net_id, sync_path]
 			send_tcp_message_as_host(new_peer, message)
 
-		# --- 2. Send the full synchronization snapshot ONLY to the new client ---
-		send_synchronizers_in_tree(new_peer) # New logic: directs sync to one peer
+		# --- Send the full synchronization snapshot ONLY to the new client ---
+		send_synchronizers_in_tree(new_peer) # Directs sync to one peer
 
 		# NEW: Mark this peer as initialized (ready for continuous broadcasts)
 		initialized_peers[new_peer] = true
 		
 		broadcast_tcp_message(new_peer, "Server_Godot_Online")
 	
-	# TCP from existing Clients
+	# --- NOTE: FIXED-RATE SYNCHRONIZATION LOGIC HAS BEEN MOVED TO _process(delta) ---
+	
+	# 2. TCP Polling from existing Clients
 	for i in range(host_tcp_peers.size() - 1, -1, -1):
 		var peer = host_tcp_peers[i]
 		peer.poll()
@@ -298,7 +311,7 @@ func poll_as_host():
 			else:
 				break
 				
-	# UDP Poll
+	# 3. UDP Poll
 	if host_udp_server.is_listening():
 		host_udp_server.poll()
 		while host_udp_server.is_connection_available():
@@ -311,7 +324,6 @@ func poll_as_host():
 				peer.put_packet(ack_packet)
 				
 				emit_signal("server_status_update", "Received UDP data from client, sent ACK.")
-
 
 func send_tcp_message_as_host(peer, message):
 	var encoded_data = message.to_utf8_buffer()
@@ -408,7 +420,18 @@ func poll_as_client():
 		
 		emit_signal("server_status_update", "UDP Reply: " + received_string)
 
-# Added optional target_peer for directed synchronization
+# Iterates over all REGISTERED synchronizers and broadcasts their state.
+func _update_all_synchronizers():
+	if current_mode != NetMode.HOST: return
+	
+	for net_id in net_id_to_synchronizer_map:
+		var synchronizer : Synchronizer = net_id_to_synchronizer_map[net_id]
+		if is_instance_valid(synchronizer):
+			# Broadcast to all clients
+			synchronizer.send()
+
+# optional target_peer for directed synchronization
+# called for the intial 'snapshot' aka when the client connects to the host and we normalize synchronizerIDs
 func send_synchronizers_in_tree(target_peer: StreamPeerTCP = null):
 	var root : Node = get_tree().root
 	send_synchronizers_in_children(root, target_peer)
