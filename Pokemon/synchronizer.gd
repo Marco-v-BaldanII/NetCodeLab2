@@ -6,85 +6,94 @@ enum PROTOCOL {
 	TCP
 }
 
+# ⭐ CORRECT LOCATION: NetMode is defined here.
+enum NetMode { DISCONNECTED, HOST, CLIENT }
+
 @onready var parent : Node = $".."
 @export var protocol : PROTOCOL = PROTOCOL.UDP
 @export var synch_transform : bool
 @export var synch_properties : Array[String]
-# --- NEW INTERPOLATION EXPORTS ---
+# --- INTERPOLATION EXPORTS ---
 @export var interpolate_transform : bool = true
-# 100-150ms is a good starting point for the delay buffer
-@export var interpolation_delay_ms : int = 150 
-# --- END NEW EXPORTS ---
+@export var interpolation_delay_ms : int = 150
+# ⭐ AUTHORITY MODE: Uses the locally defined NetMode.
+@export var authority_mode : NetMode = NetMode.HOST
+# --- END EXPORTS ---
 
-# This holds the unique, server-assigned integer ID (the NetID).
 var network_object_id : int = -1
-
-# --- NEW STATE VARIABLES FOR INTERPOLATION ---
-# History buffer: Stores [timestamp_ms, Transform]
-var transform_history : Array = [] 
+var transform_history : Array = []
 const HISTORY_MAX_SIZE = 10
-# --- END NEW STATE ---
+var _client_send_timer: float = 0.0
 
 
 func _ready() -> void:
-	if NetPeer.current_mode == NetPeer.NetMode.HOST:
+	# We must assume NetPeer.current_mode is an integer that corresponds to this NetMode enum.
+	if NetPeer.current_mode == NetMode.HOST: 
 		network_object_id = NetPeer.register_synchronizer(self)
-	else:
-		# Clients only enable the _process loop if interpolation is required
-		if interpolate_transform:
+	
+	elif NetPeer.current_mode == NetMode.CLIENT:
+		# Enable _process if we need to receive (interpolation) OR if we need to send (client authority)
+		if interpolate_transform or (authority_mode == NetMode.CLIENT):
 			set_process(true)
-		pass
 
 
 func _process(delta):
-	# Only run on the Client for interpolated objects
-	if NetPeer.current_mode != NetPeer.NetMode.CLIENT or not interpolate_transform:
-		return
-		
-	if transform_history.size() < 2:
-		# Need at least two history entries (A and B) to interpolate
-		return
-
-	# Calculate the target render time (Current time minus the fixed delay)
-	var render_time_ms = Time.get_ticks_msec() - interpolation_delay_ms
-
-	# Remove old frames that are no longer needed
-	while transform_history.size() > 2 and transform_history[1][0] < render_time_ms:
-		transform_history.pop_front()
-
-	# If we still have at least two points (A and B)
-	if transform_history.size() >= 2:
-		var transform_A = transform_history[0][1] # Transform at older timestamp
-		var time_A = float(transform_history[0][0])
-		
-		var transform_B = transform_history[1][1] # Transform at newer timestamp
-		var time_B = float(transform_history[1][0])
-		
-		# Calculate the difference and the percentage completed (t)
-		var total_time_diff = time_B - time_A
-		var current_time_diff = render_time_ms - time_A
-		
-		# Avoid division by zero and potential time travel issues
-		if total_time_diff <= 0.0: return
-		
-		# t is the interpolation factor (0.0 to 1.0)
-		var t = clampf(current_time_diff / total_time_diff, 0.0, 1.0)
-		
-		# Smoothly apply the interpolated transform
-		parent.global_transform = transform_A.interpolate_with(transform_B, t)
-		
+	# ================= 1. INTERPOLATION LOGIC (RECEIVING) =================
+	# Use NetMode.CLIENT directly in the condition
+	if NetPeer.current_mode == NetMode.CLIENT and interpolate_transform:
+		if transform_history.size() < 2:
+			pass 
+		else:
+			# ... (Interpolation logic unchanged)
+			var render_time_ms = Time.get_ticks_msec() - interpolation_delay_ms
+			
+			while transform_history.size() > 2 and transform_history[1][0] < render_time_ms:
+				transform_history.pop_front()
+			
+			if transform_history.size() >= 2:
+				var transform_A = transform_history[0][1]
+				var time_A = float(transform_history[0][0])
+				var transform_B = transform_history[1][1]
+				var time_B = float(transform_history[1][0])
+				
+				var total_time_diff = time_B - time_A
+				var current_time_diff = render_time_ms - time_A
+				
+				if total_time_diff <= 0.0: return
+				
+				var t = clampf(current_time_diff / total_time_diff, 0.0, 1.0)
+				
+				parent.global_transform = transform_A.interpolate_with(transform_B, t)
+	
+	# ================= 2. CLIENT SENDING LOGIC (OWNERSHIP) =================
+	
+	# The object sends if the current mode matches its authority mode.
+	if NetPeer.current_mode == authority_mode:
+		_client_send_timer += delta
+		if _client_send_timer >= 1.0 / NetPeer.SYNC_RATE_PER_SECOND:
+			send()
+			_client_send_timer = 0.0
 
 
 func send(target_peer: StreamPeerTCP = null):
-	# (Send function remains the same)
+	# 🔴 FIX C: Authority Check Logic uses local NetMode.
+	
+	if NetPeer.current_mode == NetMode.HOST:
+		# Host: Skips sending if the authority is CLIENT.
+		if authority_mode == NetMode.CLIENT:
+			return 
+	elif NetPeer.current_mode == NetMode.CLIENT:
+		# Client: Skips sending if the authority is HOST.
+		if authority_mode == NetMode.HOST:
+			return 
+	
 	if network_object_id == -1: return
 
+	# ... (Synch data packing unchanged) ...
 	var data_dic : Dictionary
-	#------------ SYNCH TRANSFORM ----------#
 	if synch_transform and parent.has_method("get_global_transform"):
 		data_dic["global_transform"] = parent.global_transform
 	
-	#------------ SYNCH VARIABLES ----------#
 	for property in synch_properties:
 		var value = parent.get(property)
 		data_dic[property] = value
@@ -95,6 +104,7 @@ func send(target_peer: StreamPeerTCP = null):
 
 
 func receive(received_data: PackedByteArray):
+	# ... (Receive logic unchanged, uses NetMode.CLIENT locally) ...
 	var received_dic: Dictionary = bytes_to_var(received_data)
 	
 	if typeof(received_dic) != TYPE_DICTIONARY:
@@ -105,33 +115,29 @@ func receive(received_data: PackedByteArray):
 	if synch_transform and received_dic.has("global_transform") and parent.has_method("set_global_transform"):
 		var new_transform = received_dic["global_transform"]
 		
-		if NetPeer.current_mode == NetPeer.NetMode.CLIENT and interpolate_transform:
-			# --- INTERPOLATION LOGIC (Client-side) ---
+		if NetPeer.current_mode == NetMode.CLIENT and interpolate_transform:
+			# Interpolation buffer logic
 			var new_timestamp = Time.get_ticks_msec()
-			
-			# 1. Add the new keyframe to the history
 			transform_history.push_back([new_timestamp, new_transform])
 			
-			# 2. Limit the size of the history buffer
 			while transform_history.size() > HISTORY_MAX_SIZE:
 				transform_history.pop_front()
-				
-			# print("Added frame. Size: ", transform_history.size(), " Latest Time: ", new_timestamp)
-			# Do NOT apply the transform directly here; it will be applied in _process
-			
+		
 		else:
-			# --- NO INTERPOLATION (Host or Client not using interpolation) ---
+			# Snap (Host or non-interpolated client object)
 			parent.global_transform = new_transform
 			print("Synched global_transform (Snap)")
 			
-		# Remove it from the dictionary so it doesn't get processed in the loop below
 		received_dic.erase("global_transform")
 		
 	# --------------- RECEIVE VARIABLES ---------------#
-	# (This part remains the same)
 	for property in received_dic:
 		if property in synch_properties:
 			parent.set(property, received_dic[property])
 			print("Synched property " + property)
 		else:
 			push_warning("Received property not in synch_properties: " + property)
+
+
+func does_own_node() -> bool:
+	return NetPeer.current_mode == authority_mode

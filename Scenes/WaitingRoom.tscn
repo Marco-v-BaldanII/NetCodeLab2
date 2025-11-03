@@ -17,8 +17,17 @@ text = "Send Pokemon"
 script = ExtResource("2_uhqgu")
 
 [node name="Pokemon" parent="." instance=ExtResource("3_gtrc2")]
+position = Vector2(654, 364)
+
+[node name="Pokemon2" parent="." instance=ExtResource("3_gtrc2")]
+modulate = Color(0.857793, 0.378708, 0.500507, 1)
+position = Vector2(892, 364)
+
+[node name="Synchronizer" parent="Pokemon2" index="0"]
+authority_mode = 2
 
 [connection signal="button_down" from="Button" to="Button" method="_on_button_down"]
 
 [editable path="Chat"]
 [editable path="Pokemon"]
+[editable path="Pokemon2"]

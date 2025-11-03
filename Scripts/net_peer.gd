@@ -1,8 +1,7 @@
 extends Node
 # Autoload: NetPeer
 
-enum NetMode { DISCONNECTED, HOST, CLIENT }
-var current_mode = NetMode.DISCONNECTED:
+var current_mode : Synchronizer.NetMode = Synchronizer.NetMode.DISCONNECTED:
 	set(val):
 		current_mode = val
 
@@ -48,16 +47,16 @@ var is_initial_sync_complete : bool = false # Client-side gate for sync packets
 # --- INITIALIZATION ---
 
 func init_host():
-	if current_mode != NetMode.DISCONNECTED: return
-	current_mode = NetMode.HOST
+	if current_mode != Synchronizer.NetMode.DISCONNECTED: return
+	current_mode = Synchronizer.NetMode.HOST
 	start_server()
 	print("NetPeer initialized as HOST.")
 	local_client_id = 0
 
 
 func init_client(ip_address):
-	if current_mode != NetMode.DISCONNECTED: return
-	current_mode = NetMode.CLIENT
+	if current_mode != Synchronizer.NetMode.DISCONNECTED: return
+	current_mode = Synchronizer.NetMode.CLIENT
 	
 	# 🔴 FIX 1: Client MUST bind to port 0 to get a unique, available port.
 	var udp_error = client_udp_peer.bind(0)
@@ -101,17 +100,17 @@ func send_initial_messages():
 
 
 func send_chat_message(message_content: String):
-	if message_content == "" or current_mode == NetMode.DISCONNECTED:
+	if message_content == "" or current_mode == Synchronizer.NetMode.DISCONNECTED:
 		return
 	
-	var sender_name = "[Host]: " if current_mode == NetMode.HOST else "[You]: "
+	var sender_name = "[Host]: " if current_mode == Synchronizer.NetMode.HOST else "[You]: "
 	var full_message = sender_name + message_content
 	
 	emit_signal("chat_message_received", full_message)
 	
-	if current_mode == NetMode.HOST:
+	if current_mode == Synchronizer.NetMode.HOST:
 		broadcast_tcp_message(null, full_message)
-	elif current_mode == NetMode.CLIENT:
+	elif current_mode == Synchronizer.NetMode.CLIENT:
 		var prefixed_message = "CHAT_MSG: " + full_message
 		send_tcp_message_as_client(prefixed_message)
 
@@ -133,7 +132,7 @@ func send_synchronization_data(data: PackedByteArray, network_object_id: int, ta
 	var final_payload = stream.data_array
 	
 	match current_mode:
-		NetMode.HOST:
+		Synchronizer.NetMode.HOST:
 			if protocol == Synchronizer.PROTOCOL.TCP :
 				if target_peer:
 					_send_framed_data_to_peer(target_peer, final_payload)
@@ -155,7 +154,7 @@ func send_synchronization_data(data: PackedByteArray, network_object_id: int, ta
 					# 2. Put the packet on the wire
 					udp_sender.put_packet(final_payload)
 					
-		NetMode.CLIENT:
+		Synchronizer.NetMode.CLIENT:
 			if protocol == Synchronizer.PROTOCOL.TCP :
 				_send_framed_data_to_peer(client_tcp_peer, final_payload)
 			
@@ -192,7 +191,7 @@ func _route_synchronization_packet(data_bytes: PackedByteArray, sender_peer: Str
 		push_warning("SYNC: Failed to find object with Network ID: " + str(network_id))
 
 	# Host rebroadcast logic (Only for TCP packets received from clients)
-	if current_mode == NetMode.HOST and sender_peer != null:
+	if current_mode == Synchronizer.NetMode.HOST and sender_peer != null:
 		# Rebroadcast the full packet to other clients
 		for peer in host_tcp_peers:
 			if peer != sender_peer:
@@ -226,13 +225,13 @@ func broadcast_tcp_message(sender_peer, message):
 # Updated _process: Manages the timer
 func _process(delta):
 	# 1. Update Polling
-	if current_mode == NetMode.HOST:
+	if current_mode == Synchronizer.NetMode.HOST:
 		poll_as_host()
-	elif current_mode == NetMode.CLIENT:
+	elif current_mode == Synchronizer.NetMode.CLIENT:
 		poll_as_client()
 		
 	# 2. Handle Fixed-Rate Synchronization (HOST ONLY)
-	if current_mode == NetMode.HOST:
+	if current_mode == Synchronizer.NetMode.HOST:
 		_sync_timer += delta
 		if _sync_timer >= 1.0 / SYNC_RATE_PER_SECOND:
 			_update_all_synchronizers()
@@ -464,7 +463,7 @@ func poll_as_client():
 
 
 func _update_all_synchronizers():
-	if current_mode != NetMode.HOST: return
+	if current_mode != Synchronizer.NetMode.HOST: return
 	
 	for net_id in net_id_to_synchronizer_map:
 		var synchronizer : Synchronizer = net_id_to_synchronizer_map[net_id]
